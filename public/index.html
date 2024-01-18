@@ -1,0 +1,221 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Sharing App</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .button {
+            background-color: #4CAF50;
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Sharing App</h1>
+    
+    <!-- User Settings -->
+    <div id="userSettings">
+        <label>Your Username:</label>
+        <span id="username" contenteditable="true"></span>
+        <button class="button" onclick="editUsername()">Edit</button>
+    </div>
+
+    <input type="file" id="fileInput" />
+    <button class="button" id="uploadButton">Upload</button>
+    <ul id="fileList"></ul>
+    
+    <h2>Users</h2>
+    <button class="button" onclick="toggleVisibility()">Toggle Visibility</button>
+    <ul id="userList"></ul>
+
+   
+
+<select id="recipientSelect">
+    <option value="Select recipient">Select recipient</option>
+</select>
+
+
+
+
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+<!-- ... (previous HTML code) ... -->
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const socket = io();
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const userList = document.getElementById('userList');
+        const userSettings = document.getElementById('userSettings');
+        const usernameSpan = document.getElementById('username');
+        const uploadButton = document.getElementById('uploadButton');
+        const recipientSelect = document.getElementById('recipientSelect');
+        const fileProgressBar = document.getElementById('fileProgressBar');
+
+        let storedUsername = localStorage.getItem('username');
+        if (!storedUsername) {
+            storedUsername = prompt('Please enter your username:');
+            localStorage.setItem('username', storedUsername);
+        }
+        usernameSpan.textContent = storedUsername;
+
+        fileInput.addEventListener('change', () => {
+            if (recipientSelect.value !== 'Select recipient') {
+                uploadFile();
+            } else {
+                alert('Please select a recipient from the list.');
+            }
+        });
+
+        socket.on('file uploaded', (data) => {
+            const listItem = document.createElement('li');
+            listItem.textContent = `File received from ${data.username}: ${data.fileName}`;
+
+            const saveButton = document.createElement('button');
+            saveButton.textContent = 'Save';
+            saveButton.onclick = () => saveFile(data.fileName, data.filePath);
+
+            listItem.appendChild(saveButton);
+            receivedList.appendChild(listItem);
+
+            showTickMark(listItem);
+        });
+
+        socket.on('update user list', (users) => {
+            recipientSelect.innerHTML = '<option value="Select recipient">Select recipient</option>';
+            users.forEach((user) => {
+                if (user.id !== socket.id) {
+                    const option = document.createElement('option');
+                    option.value = user.id;
+                    option.textContent = user.username;
+                    recipientSelect.appendChild(option);
+                }
+            });
+
+            userList.innerHTML = '';
+            users.forEach((user) => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `${user.username} (${user.isVisible ? 'Visible' : 'Invisible'})`;
+                userList.appendChild(listItem);
+            });
+        });
+
+        socket.on('connect', () => {
+            socket.emit('toggle visibility', true, storedUsername);
+        });
+
+        window.toggleVisibility = function () {
+            socket.emit('toggle visibility');
+        };
+
+        window.editUsername = function () {
+            const newUsername = prompt('Enter your new username:');
+            if (newUsername) {
+                localStorage.setItem('username', newUsername);
+                usernameSpan.textContent = newUsername;
+                socket.emit('update username', newUsername);
+            }
+        };
+
+        uploadButton.addEventListener('click', () => {
+            if (recipientSelect.value !== 'Select recipient') {
+                uploadFile();
+            } else {
+                alert('Please select a recipient from the list.');
+            }
+        });
+
+        function uploadFile() {
+            const file = fileInput.files[0];
+            const recipientId = recipientSelect.value;
+            const recipientUsername = recipientSelect.options[recipientSelect.selectedIndex].textContent;
+
+            if (file && recipientId) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('recipient', recipientId);
+                formData.append('recipientUsername', recipientUsername);
+                formData.append('username', storedUsername);
+
+                const xhr = new XMLHttpRequest();
+
+                // Update progress bar during file upload
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (event.lengthComputable) {
+                        const percentComplete = (event.loaded / event.total) * 100;
+                        fileProgressBar.value = percentComplete;
+                    }
+                });
+
+                xhr.open('POST', '/upload', true);
+
+                xhr.onload = function () {
+                    if (xhr.status === 200) {
+                        console.log(xhr.responseText);
+                        // Reset progress bar after upload completion
+                        fileProgressBar.value = 0;
+                    }
+                };
+
+                // Send the FormData with the file
+                xhr.send(formData);
+            }
+        }
+
+        function saveFile(fileName, filePath) {
+            const downloadLink = document.createElement('a');
+            downloadLink.href = `/uploads/${fileName}`;
+            downloadLink.download = fileName;
+            downloadLink.click();
+        }
+
+        function showTickMark(element) {
+            const tickMark = document.createElement('span');
+            tickMark.innerHTML = '&#10004;'; // Unicode check mark
+            tickMark.style.color = 'green';
+            element.appendChild(tickMark);
+
+            setTimeout(() => {
+                element.removeChild(tickMark);
+            }, 2000);
+        }
+    });
+</script>
+
+<!-- ... (remaining HTML code) ... -->
+
+<div id="fileProgressBar" style="display: none;">
+    <label for="fileProgress">File Progress:</label>
+    <progress id="fileProgress" value="0" max="100"></progress>
+</div>
+
+<!-- ... (remaining HTML code) ... -->
+
+<div id="filePartition">
+    <h2>Sent Files</h2>
+    <ul id="sentList"></ul>
+    <h2>Received Files</h2>
+    <ul id="receivedList"></ul>
+</div>
+</body>
+</html>
